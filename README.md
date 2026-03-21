@@ -97,10 +97,4 @@ data-analyst-agent/
   README.md
 ```
 
-## 推送到 GitHub
 
-本地已可用 Git 管理。将代码推到你自己的 GitHub 仓库的步骤见 **[GITHUB.md](./GITHUB.md)**。
-
-## 许可
-
-示例项目，按需在本地修改使用。
