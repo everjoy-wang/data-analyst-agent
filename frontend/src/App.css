@@ -1,0 +1,253 @@
+:root {
+  color-scheme: light;
+  --bg: #0f1419;
+  --panel: #1a2332;
+  --border: #2d3a4d;
+  --text: #e8eef7;
+  --muted: #8b9cb3;
+  --accent: #3d9cf5;
+  --accent-dim: #2563a8;
+  --user-bubble: #243447;
+  --assistant-bubble: #15202b;
+  --code-bg: #0d1117;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(1200px 600px at 10% -10%, #1a2f4a 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #1e2d3d 0%, transparent 50%), var(--bg);
+  color: var(--text);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  gap: 1rem;
+}
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.75rem;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.upload-row input[type="file"] {
+  max-width: 100%;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-dim) 100%);
+  color: #fff;
+  padding: 0.45rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.preview {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  max-height: 160px;
+  overflow: auto;
+}
+
+.preview strong {
+  color: var(--text);
+}
+
+.chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 320px;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-right: 4px;
+}
+
+.bubble {
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  line-height: 1.55;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  background: var(--user-bubble);
+}
+
+.bubble.assistant {
+  align-self: stretch;
+  background: var(--assistant-bubble);
+}
+
+.bubble .meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+.compose {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.compose textarea {
+  flex: 1;
+  min-height: 72px;
+  max-height: 200px;
+  resize: vertical;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.compose textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.md {
+  font-size: 0.95rem;
+}
+
+.md h1,
+.md h2,
+.md h3 {
+  margin: 0.6em 0 0.35em;
+  font-size: 1.05em;
+}
+
+.md p {
+  margin: 0.4em 0;
+}
+
+.md ul {
+  margin: 0.35em 0;
+  padding-left: 1.25rem;
+}
+
+.md a {
+  color: var(--accent);
+}
+
+.code-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0.75rem 0 0.25rem;
+}
+
+.code-wrap {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin: 0.35rem 0 0.5rem;
+}
+
+.code-wrap pre {
+  margin: 0 !important;
+  border-radius: 0 !important;
+  font-size: 0.8rem !important;
+}
+
+.figure-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.figure-row img {
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.tool-result {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--panel);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow: auto;
+  border: 1px dashed var(--border);
+}
+
+.thinking {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
+}
