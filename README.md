@@ -1,6 +1,6 @@
 # 智能数据分析师（Data Analyst Agent）
 
-位于 `G:\xiangmu\data-analyst-agent`。用户上传 **CSV / Excel**，后端使用 **FastAPI + LangGraph（LangChain）** 驱动 ReAct Agent，通过 **子进程沙箱** 执行模型生成的 **Pandas / Matplotlib** 代码；**SSE 流式**推送思考与代码片段；前端 **React** 渲染 **Markdown**、**代码高亮** 与 **Base64 PNG 图表**。
+用户上传 **CSV / Excel**，后端使用 **FastAPI + LangGraph（LangChain）** 驱动 ReAct Agent，通过 **子进程沙箱** 执行模型生成的 **Pandas / Matplotlib** 代码；**SSE 流式**推送思考与代码片段；前端 **React** 渲染 **Markdown**、**代码高亮** 与 **Base64 PNG 图表**。
 
 ## 架构说明
 
