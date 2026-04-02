@@ -16,8 +16,89 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+
+def _setup_chinese_font() -> None:
+    """在 Windows 上自动查找可用的中文字体并设置给 matplotlib。"""
+    import os
+
+    candidates = ["Microsoft YaHei", "SimHei", "SimSun", "KaiTi", "FangSong"]
+
+    font_dir = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Fonts")
+    font_files = {
+        "Microsoft YaHei": "msyh.ttc",
+        "SimHei": "simhei.ttf",
+        "SimSun": "simsun.ttc",
+        "KaiTi": "simkai.ttf",
+        "FangSong": "simfang.ttf",
+    }
+
+    for name in candidates:
+        font_file = font_files.get(name, "")
+        if font_file and os.path.isfile(os.path.join(font_dir, font_file)):
+            matplotlib.rcParams["font.sans-serif"] = [name, "DejaVu Sans"]
+            matplotlib.rcParams["axes.unicode_minus"] = False
+            return
+
+    matplotlib.rcParams["axes.unicode_minus"] = False
+
+
+_setup_chinese_font()
+
 _MAX_CODE_CHARS = 80_000
 _MAX_OUTPUT_CHARS = 200_000
+
+
+def _sanitize_code(code: str) -> str:
+    """修复小模型常见的代码格式问题。"""
+    code = code.strip()
+
+    if code.startswith("```"):
+        lines = code.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        code = "\n".join(lines)
+
+    real_newlines = code.count("\n")
+    escaped_newlines = code.count("\\n")
+    if escaped_newlines > 0 and real_newlines <= 2:
+        code = code.replace("\\n", "\n")
+        code = code.replace("\\'", "'")
+        code = code.replace('\\"', '"')
+        code = code.replace("\\t", "\t")
+
+    cleaned_lines = []
+    for line in code.split("\n"):
+        if line.strip() == "plt.show()":
+            continue
+        cleaned_lines.append(line)
+    code = "\n".join(cleaned_lines)
+
+    return code
+
+
+_ALLOWED_IMPORTS = frozenset({
+    "pandas", "numpy", "matplotlib", "matplotlib.pyplot", "seaborn",
+    "math", "statistics", "collections", "itertools", "functools",
+    "datetime", "re", "json", "csv", "decimal", "fractions",
+    "textwrap", "string", "operator", "copy",
+})
+
+_BLOCKED_IMPORTS = frozenset({
+    "IPython", "ipython", "jupyter", "notebook",
+    "os", "sys", "subprocess", "shutil", "socket",
+    "requests", "urllib", "http",
+})
+
+
+def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:
+    root = name.split(".")[0]
+    if root in _BLOCKED_IMPORTS:
+        raise ImportError(f"禁止导入模块: {name}")
+    if root not in _ALLOWED_IMPORTS and name not in _ALLOWED_IMPORTS:
+        raise ImportError(f"不允许导入模块: {name}")
+    return __builtins__["__import__"](name, *args, **kwargs) if isinstance(__builtins__, dict) else __import__(name, *args, **kwargs)
 
 
 def _limited_builtins() -> dict[str, Any]:
@@ -68,6 +149,7 @@ def _limited_builtins() -> dict[str, Any]:
 
     for name in safe:
         bi[name] = getattr(builtins, name)
+    bi["__import__"] = _safe_import
     bi["print"] = print
     bi["True"] = True
     bi["False"] = False
@@ -75,15 +157,41 @@ def _limited_builtins() -> dict[str, Any]:
     return bi
 
 
+def _find_header_row(path: str, ext: str) -> int | None:
+    """检测真正的表头行：如果前几行大部分列是 Unnamed，说明需要跳过标题行。"""
+    import pandas as pd
+
+    try:
+        if ext == ".csv":
+            probe = pd.read_csv(path, nrows=5, header=None)
+        else:
+            probe = pd.read_excel(path, nrows=5, header=None)
+    except Exception:
+        return None
+
+    for i in range(min(5, len(probe))):
+        row = probe.iloc[i]
+        non_null = row.dropna()
+        if len(non_null) < 2:
+            continue
+        unique_vals = set(str(v).strip() for v in non_null)
+        if len(unique_vals) >= 3 and not any(v.startswith("Unnamed") for v in unique_vals):
+            return i
+    return None
+
+
 def _load_dataframe(path: str):
     import pandas as pd
 
     lower = path.lower()
+    ext = ".csv" if lower.endswith(".csv") else ".xlsx"
+    if not (lower.endswith(".csv") or lower.endswith((".xlsx", ".xlsm", ".xls"))):
+        raise ValueError("仅支持 .csv 或 Excel（.xlsx/.xlsm/.xls）")
+
+    header_row = _find_header_row(path, ext)
     if lower.endswith(".csv"):
-        return pd.read_csv(path)
-    if lower.endswith((".xlsx", ".xlsm", ".xls")):
-        return pd.read_excel(path)
-    raise ValueError("仅支持 .csv 或 Excel（.xlsx/.xlsm/.xls）")
+        return pd.read_csv(path, header=header_row)
+    return pd.read_excel(path, header=header_row)
 
 
 def _collect_figures_b64() -> list[str]:
@@ -130,6 +238,8 @@ def run_job(payload: dict[str, Any]) -> dict[str, Any]:
         "df": df,
         "DATA_PATH": data_path,
     }
+
+    code = _sanitize_code(code)
 
     try:
         compiled = compile(code, "<analysis>", "exec")

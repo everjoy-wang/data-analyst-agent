@@ -1,18 +1,27 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Any, AsyncIterator
 
 import pandas as pd
+
+logger = logging.getLogger("uvicorn.error")
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from agent_core import SYSTEM_PROMPT, get_agent_graph, pop_pending_figures_for_thread
+from agent_core import (
+    SYSTEM_PROMPT,
+    get_agent_graph,
+    pop_pending_figures_for_thread,
+    reset_analysis_data_path,
+    set_analysis_data_path,
+)
 from config import settings
 from session_context import current_session_id
 from session_store import SessionState, sessions
@@ -31,8 +40,38 @@ UPLOAD_ROOT = Path(__file__).resolve().parent / settings.upload_dir
 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 
+def _detect_header_row(path: str, ext: str) -> int | None:
+    """探测真正的表头行索引，跳过合并标题行。"""
+    try:
+        if ext == ".csv":
+            probe = pd.read_csv(path, nrows=5, header=None)
+        else:
+            probe = pd.read_excel(path, nrows=5, header=None)
+    except Exception:
+        return None
+    for i in range(min(5, len(probe))):
+        row = probe.iloc[i]
+        non_null = row.dropna()
+        if len(non_null) < 2:
+            continue
+        unique_vals = set(str(v).strip() for v in non_null)
+        if len(unique_vals) >= 3 and not any(v.startswith("Unnamed") for v in unique_vals):
+            return i
+    return None
+
+
 def _sse(obj: dict[str, Any]) -> str:
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+
+import re
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _strip_think_tags(text: str) -> str:
+    """Remove <think>...</think> blocks from model output."""
+    return _THINK_RE.sub("", text)
 
 
 def _extract_text_from_chunk(chunk: Any) -> str:
@@ -40,7 +79,7 @@ def _extract_text_from_chunk(chunk: Any) -> str:
         return ""
     content = getattr(chunk, "content", None)
     if isinstance(content, str):
-        return content
+        return _strip_think_tags(content)
     if isinstance(content, list):
         parts: list[str] = []
         for p in content:
@@ -72,20 +111,32 @@ async def upload(file: UploadFile = File(...)) -> dict[str, Any]:
     dest.write_bytes(raw)
 
     preview: dict[str, Any] = {}
+    data_summary = ""
     try:
+        header_row = _detect_header_row(str(dest), ext)
         if ext == ".csv":
-            df = pd.read_csv(dest, nrows=8)
+            df_full = pd.read_csv(dest, header=header_row)
         else:
-            df = pd.read_excel(dest, nrows=8)
+            df_full = pd.read_excel(dest, header=header_row)
+        cols = list(df_full.columns.astype(str))
         preview = {
-            "columns": list(df.columns.astype(str)),
-            "row_count_hint": int(len(df)),
-            "sample_rows": df.head(5).to_dict(orient="records"),
+            "columns": cols,
+            "row_count_hint": int(len(df_full)),
+            "sample_rows": df_full.head(5).to_dict(orient="records"),
         }
+        sample_str = df_full.head(3).to_string(index=False)
+        dtypes_str = "\n".join(f"  - {c}: {df_full[c].dtype}" for c in cols)
+        data_summary = (
+            f"文件名: {name}\n"
+            f"总行数: {len(df_full)}\n"
+            f"列名: {cols}\n"
+            f"各列类型:\n{dtypes_str}\n"
+            f"前3行样本:\n{sample_str}"
+        )
     except Exception as e:
         preview = {"error": f"预览解析失败: {e}"}
 
-    sessions[sid] = SessionState(dest.resolve())
+    sessions[sid] = SessionState(dest.resolve(), data_summary=data_summary)
     return {"session_id": sid, "filename": name, "preview": preview}
 
 
@@ -98,10 +149,14 @@ async def chat_stream(body: ChatBody) -> StreamingResponse:
     graph = get_agent_graph()
     config: dict[str, Any] = {"configurable": {"thread_id": body.session_id}}
 
+    data_context = ""
+    if st.data_summary:
+        data_context = f"\n\n【当前数据概况】\n{st.data_summary}\n\n请根据以上列名和数据来编写代码，不要猜测列名。"
+
     if st.needs_system:
         messages: list[BaseMessage] = [
             SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=body.message),
+            HumanMessage(content=data_context + body.message if data_context else body.message),
         ]
         st.needs_system = False
     else:
@@ -111,7 +166,9 @@ async def chat_stream(body: ChatBody) -> StreamingResponse:
 
     async def gen() -> AsyncIterator[str]:
         ctx_tok = current_session_id.set(sid)
+        data_tok = set_analysis_data_path(str(st.file_path))
         try:
+            logger.info("[chat] session=%s data_path=%s", sid, st.file_path)
             yield _sse({"type": "start", "session_id": sid})
             async for event in graph.astream_events(
                 {"messages": messages},
@@ -156,8 +213,10 @@ async def chat_stream(body: ChatBody) -> StreamingResponse:
 
             yield _sse({"type": "done"})
         except Exception as e:
+            logger.exception("[chat] error session=%s", sid)
             yield _sse({"type": "error", "message": str(e)})
         finally:
+            reset_analysis_data_path(data_tok)
             current_session_id.reset(ctx_tok)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
@@ -166,6 +225,28 @@ async def chat_stream(body: ChatBody) -> StreamingResponse:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "llm_configured": "yes" if settings.openai_api_key else "no"}
+
+
+@app.get("/api/test-llm")
+async def test_llm() -> dict[str, Any]:
+    """快速测试 LLM 连通性"""
+    from langchain_openai import ChatOpenAI
+    try:
+        kwargs: dict[str, Any] = {
+            "model": settings.llm_model,
+            "temperature": 0,
+            "request_timeout": 15,
+        }
+        if settings.openai_api_key:
+            kwargs["api_key"] = settings.openai_api_key
+        if settings.openai_base_url:
+            kwargs["base_url"] = settings.openai_base_url
+        llm = ChatOpenAI(**kwargs)
+        resp = await llm.ainvoke("说一个字：好")
+        return {"ok": True, "reply": resp.content}
+    except Exception as e:
+        logger.exception("[test-llm] failed")
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 if __name__ == "__main__":
