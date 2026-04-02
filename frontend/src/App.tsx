@@ -46,6 +46,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>("");
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const assistantIdxRef = useRef<number>(-1);
 
   const mdComponents = useMemo(
@@ -169,7 +170,11 @@ export default function App() {
               images: [...(m.images || []), ...ev.images],
             }));
           } else if (ev.type === "error") {
-            setStatus(ev.message);
+            setStatus(`错误：${ev.message}`);
+            patchAssistant((m) => ({
+              ...m,
+              content: m.content + `\n\n**错误：** ${ev.message}`,
+            }));
           }
         }
       }
@@ -249,11 +254,14 @@ export default function App() {
                       </div>
                     </div>
                   ))}
-                  {(m.toolResults || []).map((tr, j) => (
-                    <div key={j} className="tool-result" title="工具返回（截断）">
-                      {tr}
-                    </div>
-                  ))}
+                  {(m.toolResults || []).length > 0 ? (
+                    <details className="tool-result-details">
+                      <summary>执行结果（点击展开）</summary>
+                      {(m.toolResults || []).map((tr, j) => (
+                        <pre key={j} className="tool-result">{tr}</pre>
+                      ))}
+                    </details>
+                  ) : null}
                   {(m.images || []).length > 0 ? (
                     <div className="figure-row">
                       {(m.images || []).map((b64, j) => (
@@ -261,6 +269,8 @@ export default function App() {
                           key={j}
                           alt={`chart-${j}`}
                           src={`data:image/png;base64,${b64}`}
+                          className="figure-thumb"
+                          onClick={() => setLightboxSrc(`data:image/png;base64,${b64}`)}
                         />
                       ))}
                     </div>
@@ -291,6 +301,15 @@ export default function App() {
           </button>
         </div>
       </div>
+
+      {lightboxSrc && (
+        <div className="lightbox-overlay" onClick={() => setLightboxSrc(null)}>
+          <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
+            <img src={lightboxSrc} alt="放大查看" />
+            <button className="lightbox-close" onClick={() => setLightboxSrc(null)}>✕</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
